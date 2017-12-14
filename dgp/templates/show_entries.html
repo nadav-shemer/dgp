@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block body %}
+  {% if session.logged_in %}
+    <ul class="entries">
+    <dt>Choose an entry to generate:
+    <form action="{{ url_for('dgp.gen_entry') }}" method="post" class="add-entry">
+    <select name="name">
+    <option value=""></option>
+    {% for entry in entries %}
+      <option value="{{ entry.name }}">{{ entry.name }}</option>
+    {% else %}
+      <li><em>Unbelievable.  No entries here so far</em></li>
+    {% endfor %}
+    </select>
+    Secret: <input type="password" size="30" name="secret">
+    <input type="submit" value="Generate">
+    </form>
+    <br>
+    <dt>Create a new entry:
+    <form action="{{ url_for('dgp.add_entry') }}" method="post" class="add-entry">
+        <dt>Name:
+        <input type="text" size="15" name="name">
+        <dt>Type: <select name="type">
+          <option value="alnum">Alphanumeric</option>
+          <option value="alnumlong">Alphanumeric (long)</option>
+          <option value="hex">Hex</option>
+          <option value="hexlong">Hex (long)</option>
+          <option value="xkcd">xkcd 936</option>
+          <option value="xkcdlong">xkcd 936 long</option>
+          <option value="other">Other</option>
+        </select>
+        Other: <input type="text" size="5" name="other">
+        <dt>Note: <input type="text" size="50" name="note">
+        <dt><input type="submit" value="New">
+    </form>
+    <br>
+    <dt>Generate a custom entry:
+    <form action="{{ url_for('dgp.gen_custom') }}" method="post" class="add-entry">
+      Secret: <input type="password" size="30" name="secret">
+      Name: <input type="text" size="15" name="name"><br>
+      Type: <input type="text" size="15" name="type"><br>
+      <input type="submit" value="Generate">
+</form>
+    </ul>
+  {% endif %}
+{% endblock %}

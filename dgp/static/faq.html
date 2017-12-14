@@ -1,0 +1,83 @@
+<!doctype html>
+<title>FAQ</title>
+<link rel="stylesheet" type="text/css" href="style.css">
+<div class="widepage">
+<h1>FAQ</h1>
+<ul class="entries">
+    <dt><h2>What is DGP?</h2>
+    <dd>Deterministically Generated Passwords, a password generator.<br>
+    <br><dt><h2>What does it do?</h2>
+    <dd>
+    It generates passwords :)<br>
+    It combines the seed, a service's name and an optional secret to generate a password for use with that service.<br>
+    It stores the services' list and metadata (the preferred password type and user note).<br>
+    <br><dt><h2>Why?</h2>
+    <dd>
+    It is easier to secure and backup one seed than generate and store a random password for each service.
+    Adding a service does not entail generating new entropy, so it is repeatable (no persistent storage is nessecary - the services database is for convenience).
+    Ease of use (hopefully) eliminates the need to use weak or reused passwords.<br>
+    <br><dt><h2>Why not use a cloud service?</h2>
+    <dd>
+    Clouds are vulnerable to seeding by silver iodide, potassium iodide or dry ice.
+    In the case of global thermonuclear war it may be impossible to retrieve the data and code used to generate your passwords.
+    By keeping the seed and code, you could always generate the passwords yourself using a large but finite number of beads.<br>
+    It is easily customizable to allow generating entropy for other uses (like private keys for SSH).<br>
+    <br><dt><h2>What password types are supported?</h2>
+    <dd>Alphanumeric (base58, to ease manual copying) for sites that demand "strong" passwords.<br>
+    Hexadecimal for personal preference reasons.<br>
+    xkcd passwords for services that support long passwords.<br>
+    <br><dt><h2>How strong are the passwords being generated?</h2>
+    <dd>The default format is 8 characters in base58, roughly 46 bits of entropy.<br>
+    At one million attempts per second, it will take roughly 4 years to break it.<br>
+    It's less than that, really, because in order to appease various password "strength" checkers, the password will always contain at least one lowercase character, one uppercase and one digit.
+    Obviously these contraints make the password weaker ;)<br>
+    The "Alphanumeric (long)" has 71 bits of entropy, or 45 million years at one million passwords per second.<br>
+    xkcd password is 11 bits of entropy per word - 203 days for a 4-word password and 2 million years for 6.<br>
+    <br><dt><h2>How secure are they really, though?</h2>
+    <dd>
+    Knowing only a password (or any set of them), working back to the seed requires reversing SHA-256 or guessing it (the seed should be generated with as much entropy as you feel comfortable with).<br>
+    If an attacker has access to the seed, passwords are as secure as the secret used to generate them.<br>
+    A trojan on the server or the client can be used to retrieve the secret when the system is used, or read it from memory.<br>
+    Another weakness is the SSL connection used to retrieve the password.
+    When using self-signed certificate it is very weak indeed.<br>
+    <br><dt><h2>Isn't this security through obscurity?</h2>
+    <dd>
+    No, and Yes.
+    The password derivation is PBKDF2, a widely-used standard.
+    The seed is secured by being on a server that only allows access to password generation, which do not provide information on the seed.
+    Access to the password-generation service itself is obscured by keeping the URL private and requiring a 'password' (login cookie).
+    This provides resistance against automated attacks, which is the only thing a user should be worried about.
+    If someone gains access to the service, they can see your services list and notes, and try to brute-force the secret (but slowly).
+    A nation state actor will acquire the seed by reading it off the server, and then acquire the secret the same way or brute force it using one of the passwords it already has access to.
+    The service list can also be obscured by keeping entries off of it.<br>
+    <br><dt><h2>So I still need to type in a password?</h2>
+    <dd>
+    Only if you want the extra security.
+    Leave it blank to use the seed alone.<br>
+    <br><dt><h2>What if I type in the wrong secret?</h2>
+    <dd>
+    You get a different password.
+    There are no wrong secrets, so the server does not know which one is the right one.<br>
+    <br><dt><h2>How do I run this / what do I run this one?</h2>
+    <dd>
+    A secure computer (ideally one not used for anything else).
+    For Internet access, export the service's port on your Internet-facing computer (using a reverse proxy that's more secure than the Flask server).<br>
+    <br><dt><h2>This is really paranoid</h2>
+    <dd>
+    That's not a question.
+    I'm trying to make something that's easy enough to use all the time (so as to not require any other password manager), but safe enough to be the single point of entry for everything.<br>
+    <br><dt><h2>Python is not secure</h2>
+    <dd>
+    No it is not.
+    Ideally one would use a separate process for the password generation with a narrower interface than HTTP.<br>
+    <br><dt><h2>Is it quantom resistant?</h2>
+    <dd>
+    Somewhat! Unlike some public key ciphers, reversing a hash is not that easy on a quantom computer.<br>
+    <br><dt><h2>Is it ASIC resistant?</h2>
+    <dd>
+    No. ASICs can compute hashes incredibly fast, making the key-stretching in PBKDF2 less powerful. So-called ASIC-resistant and/or GPU-resistant hash functions are not widely considered to be cryptographically secure (yet).<br>
+    <br><dt><h2>But I need to store a PIN / password I can't control</h2>
+    <dd>
+    You can keep it encrypted in the note and have the 'password' be the decryption key.<br>
+</ul>
+</div>

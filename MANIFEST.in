@@ -1,0 +1,5 @@
+graft dgp/templates
+graft dgp/static
+include dgp/schema.sql
+include dgp/english.txt
+include dgp/seed
