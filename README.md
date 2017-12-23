@@ -40,6 +40,14 @@
          the application will greet you on
          http://localhost:5000/
 
+    ~ Other "installation" instructions
+
+         Since the above did not work for me:
+         pip install .
+         export FLASK_APP=standalone.py
+         flask initdb
+         flask run
+
     ~ Is it tested?
 
       Nope :)
