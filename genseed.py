@@ -10,7 +10,8 @@ def bytes_to_int(bytes_rep):
     :return: the unsigned integer
     :rtype: int
     """
-    return int(base64.b16encode(bytes_rep), 16)
+    #return int(base64.b16encode(bytes_rep), 16)
+    return int(bytes_rep.hex(), 16)
 
 dec_digit_to_base58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 #base58_digit_to_dec = { b58:dec for dec,b58 in enumerate(dec_digit_to_base58) }
