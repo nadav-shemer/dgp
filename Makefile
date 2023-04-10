@@ -1,4 +1,7 @@
 genseed: genseed.c
 	$(CC) $(CFLAGS) -o genseed genseed.c
 
-all: genseed
+dgp-simple: dgp-simple.c
+	$(CC) $(CFLAGS) -o dgp-simple dgp-simple.c -lcrypto
+
+all: genseed dgp-simple
