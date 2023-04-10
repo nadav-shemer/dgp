@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 import sys
 
 def get_wordlist():
@@ -16,7 +16,7 @@ def get_xkcd(int_data):
     return res
 
 if len(sys.argv) == 1:
-    print 'Usage: seed_to_numbers.py <seed>'
+    print('Usage: seed_to_hex.py <seed>')
     sys.exit(0)
 
 wordlist = get_wordlist()
@@ -32,7 +32,7 @@ for sword in seed:
             break
         i += 1
     if not found:
-        print 'could not find index for {}'.format(sword)
+        print('could not find index for {}'.format(sword))
         sys.exit(1)
 
-print seednums
+print(seednums)

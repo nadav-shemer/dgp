@@ -8,18 +8,21 @@ const char *words[2048] = {
 
 int main(int argc, char **argv)
 {
-//    char random_buf[40];
     FILE *fp = fopen("/dev/urandom", "r");
-//    fread(random_buf, 1, 40, fp);
-//    fclose(fp);
-//    for (int i = 0; i < 40; i++) {
-//        printf("%02x", random_buf[i]);
-//    }
-    assert(sizeof(words) / sizeof(char *) == 2048);
+    unsigned int seed[32];
     for (int i = 0; i < 32; i++) {
-        unsigned int random;
-        fread(&random, sizeof(random), 1, fp);
-        const char *word = words[random % 2048];
+        fread(&seed[i], sizeof(seed[i]), 1, fp);
+    }
+    for (int i = 0; i < 32; i++) {
+        printf("%u ", (seed[i] % 2048));
+    }
+    printf("\n");
+    for (int i = 0; i < 32; i++) {
+        printf("%03x", (seed[i] % 2048));
+    }
+    printf("\n");
+    for (int i = 0; i < 32; i++) {
+        const char *word = words[seed[i] % 2048];
         printf("%s ", word);
     }
     printf("\n");
