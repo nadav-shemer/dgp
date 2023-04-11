@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "*.ss": "scheme",
+        "*.scm": "scheme",
+        "*.expanded": "scheme",
+        "*.pp": "ol (scheme)",
+        "evp.h": "c",
+        "string.h": "c",
+        "stdint.h": "c",
+        "stdio.h": "c"
+    },
+    "cmake.sourceDirectory": "/home/nadav/repos/dgp",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+}
