@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #from werkzeug.security import pbkdf2_bin, pbkdf2_hex
-import werkzeug
+#import werkzeug
 import hashlib
 import base64
 import os

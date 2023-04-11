@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <assert.h>
 #include <openssl/evp.h>
+#include <openssl/bn.h>
 
 #define SALT_CHARS "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 #define DEFAULT_PBKDF2_ITERATIONS 260000
@@ -57,32 +58,32 @@ void free_wordlist(char **wordlist, size_t word_count) {
     free(wordlist);
 }
 
-//char *pbkdf2_hex(const char *data, const char *salt, int iterations, int keylen, const EVP_MD *hashfunc);
-static void pbkdf2_hex(const char *data, const char *salt, int iterations, int keylen, const char *hashfunc, char *result) {
-    unsigned char digest[keylen];
-    const EVP_MD *digest_func = NULL;
-
-    if (strcmp(hashfunc, "sha1") == 0) {
-        digest_func = EVP_sha1();
-    } else if (strcmp(hashfunc, "sha256") == 0) {
-        digest_func = EVP_sha256();
-    } else if (strcmp(hashfunc, "sha512") == 0) {
-        digest_func = EVP_sha512();
-    } else {
-        printf("Unknown hash function: %s\n", hashfunc);
-        return;
+void pbkdf2_bin(const uint8_t *data, size_t data_len, const uint8_t *salt, size_t salt_len, uint32_t iterations, uint32_t keylen, uint8_t *output) {
+    /* If data_len is 64 or higher, replace data with a hash of the data */
+    uint8_t hash[20];
+    if (data_len >= 64) {
+        EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(mdctx, EVP_sha1(), NULL);
+        EVP_DigestUpdate(mdctx, data, data_len - 1);
+        EVP_DigestFinal_ex(mdctx, hash, NULL);
+        EVP_MD_CTX_free(mdctx);
+        data = hash;
+        data_len = 20;
     }
-
-    PKCS5_PBKDF2_HMAC(data, strlen(data), (unsigned char *)salt, strlen(salt), iterations, digest_func, keylen, digest);
-
-    // Convert binary digest to hexadecimal representation
-    for (int i = 0; i < keylen; i++) {
-        sprintf(result + (i * 2), "%02x", digest[i]);
-    }
+    PKCS5_PBKDF2_HMAC_SHA1((const char *)data, data_len, salt, salt_len, iterations, keylen, output);
 }
 
-void pbkdf2_bin(const uint8_t *data, size_t data_len, const uint8_t *salt, size_t salt_len, uint32_t iterations, uint32_t keylen, uint8_t *output) {
-    PKCS5_PBKDF2_HMAC((const char *)data, data_len, salt, salt_len, iterations, EVP_sha1(), keylen, output);
+// Convert binary data to OpenSSL big integer
+BIGNUM *bin2bn(const uint8_t *data, size_t data_len)
+{
+    BIGNUM *bn = BN_new();
+    if (!bn) {
+        printf("Error allocating memory for BIGNUM.\n");
+        return NULL;
+    }
+
+    BN_bin2bn(data, data_len, bn);
+    return bn;
 }
 
 const char *base58_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -93,53 +94,52 @@ static char *get_base58(const uint8_t *input, size_t input_size) {
         printf("Invalid input.\n");
         return NULL;
     }
+    BN_CTX *bn_ctx = BN_CTX_new();
+    BIGNUM *intdata = bin2bn(input, input_size);
+    if (!intdata) {
+        return NULL;
+    }
+    // Convert 58 to BIGNUM
+    BIGNUM *base58_bn = BN_new();
+    //BN_dec2bn(&base58_bn, "58");
+    BN_set_word(base58_bn, 58);
 
-    // Calculate the maximum possible length of the resulting Base58 string
     size_t max_output_size = (input_size * 138 / 100) + 2; // Based on log(256) / log(58)
-
     char *base58_str = malloc(max_output_size);
     if (!base58_str) {
         printf("Memory allocation failed.\n");
         return NULL;
     }
+    char *out = base58_str;
 
-    uint8_t *temp_input = malloc(input_size);
-    if (!temp_input) {
-        printf("Memory allocation failed.\n");
-        free(base58_str);
-        return NULL;
+    while (BN_is_zero(intdata) == 0) {
+        BIGNUM *div = BN_new();
+        BIGNUM *mod = BN_new();
+        BN_div(div, mod, intdata, base58_bn, bn_ctx);
+        // Convert mod to integer
+        int mod_int = BN_get_word(mod);
+        char c = base58_alphabet[mod_int];
+        // Append 'c' to output
+        *out = c;
+        out++;
+        BN_copy(intdata, div);
+        BN_free(div);
+        BN_free(mod);
     }
-    memcpy(temp_input, input, input_size);
+    *out = '\0';
 
-    int index = 0;
-    while (input_size > 0) {
-        uint32_t carry = 0;
-        int i;
+    BN_CTX_free(bn_ctx);
+    BN_free(base58_bn);
+    BN_free(intdata);
+    return base58_str;
 
-        for (i = input_size - 1; i >= 0; i--) {
-            uint32_t temp = ((uint32_t)temp_input[i]) + carry * 256;
-            temp_input[i] = (uint8_t)(temp / 58);
-            carry = temp % 58;
-        }
 
-        base58_str[index++] = base58_alphabet[carry];
-
-        while (input_size > 0 && temp_input[0] == 0) {
-            input_size--;
-            memmove(temp_input, temp_input + 1, input_size);
-        }
-    }
-    base58_str[index] = '\0';
-
-    // Reverse the string since the encoding process produces the result in reverse order
+/*    // Reverse the string since the encoding process produces the result in reverse order
     for (int i = 0, j = index - 1; i < j; i++, j--) {
         char temp = base58_str[i];
         base58_str[i] = base58_str[j];
         base58_str[j] = temp;
-    }
-
-    free(temp_input);
-    return base58_str;
+    }*/
 }
 
 
@@ -185,7 +185,58 @@ static void grab_alnum(const uint8_t *data, size_t data_len, size_t length, char
 }
 
 //void get_xkcd(unsigned long long int_data, char wordlist[][MAX_WORD_LENGTH], char *res);
-static char **get_xkcd(const uint8_t *bin_data, size_t bin_data_len, char **wordlist, size_t word_count, size_t *picked_word_count) {
+char *get_xkcd(const uint8_t *input, size_t input_size, int word_count, char **wordlist) {
+    if (!input || input_size == 0) {
+        printf("Invalid input.\n");
+        return NULL;
+    }
+
+    // Convert key to BIGNUM
+    BIGNUM *intdata = bin2bn(input, input_size);
+    if (!intdata) {
+        printf("Error converting key to BIGNUM.\n");
+        return NULL;
+    }
+
+    // Determine the number of words needed
+    int num_words = (int)((BN_num_bits(intdata) + 10) / 11);  // Divide by 11 and round up
+    assert(num_words >= word_count);
+    char *xkcd_str = malloc(word_count * 8 + 1);  // Each word is at most 8 chars long
+    if (!xkcd_str) {
+        printf("Memory allocation failed.\n");
+        return NULL;
+    }
+    BN_CTX *bn_ctx = BN_CTX_new();
+    char *out = xkcd_str;
+    BIGNUM *word_bn = BN_new();
+    BN_set_word(word_bn, 2048);
+    while (BN_is_zero(intdata) == 0) {
+        BIGNUM *div = BN_new();
+        BIGNUM *mod = BN_new();
+        BN_div(div, mod, intdata, word_bn, bn_ctx);
+        // Convert mod to integer
+        int mod_int = BN_get_word(mod);
+        char *word = wordlist[mod_int];
+        size_t word_len = strlen(word);
+        memcpy(out, word, word_len);
+        *out = toupper(*out);
+        out += word_len;
+        BN_copy(intdata, div);
+        BN_free(div);
+        BN_free(mod);
+        word_count--;
+        if (word_count == 0) {
+            break;
+        }
+    }
+    *out = '\0';
+
+    BN_CTX_free(bn_ctx);
+    BN_free(word_bn);
+    BN_free(intdata);
+    return xkcd_str;
+}
+/*static char **get_xkcd(const uint8_t *bin_data, size_t bin_data_len, char **wordlist, size_t word_count, size_t *picked_word_count) {
     const size_t bits_per_word = 11; // Since 2^11 = 2048, and the wordlist has 2048 words
     const size_t max_words = (bin_data_len * 8 + bits_per_word - 1) / bits_per_word;
 
@@ -217,7 +268,7 @@ static char **get_xkcd(const uint8_t *bin_data, size_t bin_data_len, char **word
     }
 
     return result;
-}
+}*/
 
 static void free_picked_words(char **picked_words, size_t picked_word_count) {
     for (size_t i = 0; i < picked_word_count; i++) {
@@ -286,19 +337,15 @@ static char *generate(const char *seed, const char *name, const char *entry_type
         grab_alnum(bin_data, sizeof(bin_data), 12, resbuf);
         result = strdup(resbuf);
     } else if (strcmp(entry_type, "base58") == 0) {
-        result = get_base58(bin_data, 8);
+        result = get_base58(bin_data, 40);
+        result[8] = '\0';
     } else if (strcmp(entry_type, "base58long") == 0) {
-        result = get_base58(bin_data, 12);
+        result = get_base58(bin_data, 40);
+        result[12] = '\0';
     } else if (strcmp(entry_type, "xkcd") == 0) {
-        size_t picked_word_count;
-        char **picked_words = get_xkcd(bin_data, sizeof(bin_data), wordlist, word_count, &picked_word_count);
-        result = join_and_capitalize_words(picked_words, picked_word_count);
-        free_picked_words(picked_words, picked_word_count);
+        result = get_xkcd(bin_data, sizeof(bin_data), 4, wordlist);
     } else if (strcmp(entry_type, "xkcdlong") == 0) {
-        size_t picked_word_count;
-        char **picked_words = get_xkcd(bin_data, sizeof(bin_data), wordlist, word_count, &picked_word_count);
-        result = join_and_capitalize_words(picked_words, picked_word_count);
-        free_picked_words(picked_words, picked_word_count);
+        result = get_xkcd(bin_data, sizeof(bin_data), 6, wordlist);
     } else {
         result = strdup("unknown type");
     }
@@ -384,6 +431,28 @@ int main(int argc, char *argv[]) {
     const char *S = "saltSALTsaltSALTsaltSALTsaltSALTsalt";
     all_types(P, "", S);
     all_types("pass", "word", "salt");
+    all_types("pass", "word", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    some_types("pass", "word", "1234567890123456789012345678901234567890123456789012345678901234");
+    some_types("pass", "word", "12345678901234567890123456789012345678901234567890123456789012345");
+    some_types("pass", "12345678901234567890123456789012345678901234567890123456789012345", "salt");
+    // "A"*34
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "salt");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "A", "salt");
+    // "A"*34 + "A"*6
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAA", "salt");
+    // "A"*34 + "A"*7
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAA", "salt");
+    // "A"*34 + "A"*14
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAA", "salt");
+    // "A"*34 + "A"*28
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAA", "salt");
+    // "A"*34 + "A"*29
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "salt");
+    // "A"*34 + "A"*30
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "salt");
+    // "A"*64
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "salt");
+    // "A"*65
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "salt");
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "salt");
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
@@ -391,16 +460,16 @@ int main(int argc, char *argv[]) {
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "salt");
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "salt");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "default", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "salt");
     some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "salt");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
-    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    some_types("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "test", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
   } else {
     char seed[256];
     char account[256];
